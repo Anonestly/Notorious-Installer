@@ -1,0 +1,14 @@
+﻿<mah:MetroWindow x:Class="Notorious_Installer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+        xmlns:local="clr-namespace:Notorious_Installer"
+        mc:Ignorable="d"
+        Title="Notorious Installer                                                                                     (discord.gg/NotoriousV2)" Height="450" Width="800" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Topmost="True" Icon="icon.ico" ShowIconOnTitleBar="False">
+    <Grid>
+        <Image x:Name="image" HorizontalAlignment="Left" Height="411" Margin="185,0,0,0" VerticalAlignment="Top" Width="425" Source="Logo.png"/>
+
+    </Grid>
+</mah:MetroWindow>
