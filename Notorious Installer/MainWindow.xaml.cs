@@ -25,10 +25,13 @@ namespace Notorious_Installer
     public partial class MainWindow : MetroWindow
     {
 
-        private protected string CurrentVersion = "1.0";
-        private protected string VRChatInstallDir;
-        private protected string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
+        private protected static string CurrentVersion = "1.0";
+        private protected static string VRChatInstallDir;
+        private protected static string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
         private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious\Auth.txt";
+        private protected static string SteamVRChatInstallDir32 = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam", "InstallPath", null)?.ToString() + @"\steamapps\common\VRChat\VRChat.exe";
+        private protected static string SteamVRChatInstallDir64 = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Valve\Steam", "InstallPath", null)?.ToString() + @"\steamapps\common\VRChat\VRChat.exe";
+        private protected static string SteamVRChatInstallDirAlternative = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 438100", "InstallLocation", null)?.ToString();
 
 
 
@@ -59,8 +62,23 @@ namespace Notorious_Installer
                     }
                     else // We are up to date.
                     {
+
+                        // Check if VRChat is currently running.
+                        Process[] VRChat = Process.GetProcessesByName("VRChat");
+                        if (VRChat.Length != 0)
+                        {
+                            // VRChat is running, the installer cannot continue.
+                            var ExitOnly = new MetroDialogSettings()
+                            {
+                                AffirmativeButtonText = "Exit",
+                            };
+                            await this.ShowMessageAsync("Please close VRChat", "The installer cannot continue while VRChat is running.", MessageDialogStyle.Affirmative, ExitOnly);
+                            Environment.Exit(0);
+                        }
+
                         // Start the rest of the application.
                         ValidateLicense();
+
                     }
                 }
             }
@@ -76,6 +94,7 @@ namespace Notorious_Installer
             string LicenseKey;
             if (File.Exists(AuthFile))
             {
+
                 // Read all content from the auth file and turn it into a string.
                 string content = File.ReadAllText(AuthFile);
 
@@ -109,15 +128,17 @@ namespace Notorious_Installer
                     // Write the license key that the user entered into the Auth file.
                     File.WriteAllText(AuthFile, LicenseKey);
 
-                    BrowseForGameDirectory();
+                    FindInstallDir();
                 }
                 else // License key is valid.
                 {
-                    BrowseForGameDirectory();
+                    FindInstallDir();
                 }
+
             }
             else // Auth file does not exist.
             {
+
                 // Make sure that the Notorious directory exists inside of appdata directory.
                 Directory.CreateDirectory(AppdataDir);
 
@@ -148,7 +169,8 @@ namespace Notorious_Installer
                 // Write the license key that the user entered into the Auth file.
                 File.WriteAllText(AuthFile, LicenseKey);
 
-                BrowseForGameDirectory();
+                FindInstallDir();
+
             }
 
         }
@@ -156,10 +178,57 @@ namespace Notorious_Installer
 
 
         private protected ProgressDialogController controller;
-        private protected async void BrowseForGameDirectory()
+        private protected static bool RanBefore = false;
+        private protected async void FindInstallDir()
         {
 
-            await this.ShowMessageAsync("Please select VRChat.exe", "Please select VRChat.exe inside of the game install directory.", MessageDialogStyle.Affirmative);
+            if (!RanBefore)
+            {
+                RanBefore = true; // Makes sure this won't run again.
+                if (File.Exists(SteamVRChatInstallDir32))
+                    VRChatInstallDir = SteamVRChatInstallDir32;
+                else if (File.Exists(SteamVRChatInstallDir64))
+                    VRChatInstallDir = SteamVRChatInstallDir64;
+                else if (File.Exists(SteamVRChatInstallDirAlternative))
+                    VRChatInstallDir = SteamVRChatInstallDirAlternative;
+            }
+
+
+
+            if (VRChatInstallDir != null)
+            {
+                // Ask the user if the found path is correct or not.
+                var YesNo = new MetroDialogSettings()
+                {
+                    AffirmativeButtonText = "Yes",
+                    NegativeButtonText = "No",
+                };
+                // Remove 'VRChat.exe' from the filepath leaving us with just the directory.
+                string PathWithoutExecutable = VRChatInstallDir.Replace(@"\VRChat.exe", "");
+                MessageDialogResult Result = await this.ShowMessageAsync("Game directory found", PathWithoutExecutable + "\n\nDo you want to install Notorious here?", MessageDialogStyle.AffirmativeAndNegative, YesNo);
+                if (Result == MessageDialogResult.Affirmative)
+                {
+                    Install(PathWithoutExecutable);
+                }
+                else // User clicked no.
+                {
+                    ShowFileDialog();
+                }
+            }
+            else // No VRChat install directory was found.
+            {
+                ShowFileDialog();
+            }
+
+        }
+
+
+
+        private protected async void ShowFileDialog()
+        {
+
+            VRChatInstallDir = null;
+            await this.ShowMessageAsync("Please select VRChat executable", "Please navigate to the game install directory and select VRChat.exe", MessageDialogStyle.Affirmative);
 
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Title = "Please navigate to the game install directory and select VRChat.exe";
@@ -174,31 +243,16 @@ namespace Notorious_Installer
                 if (!string.IsNullOrEmpty(VRChatExecutablePath) && VRChatExecutablePath.Contains("VRChat.exe"))
                 {
 
-                    // Start installation progress message.
-                    controller = await this.ShowProgressAsync("Installing, please wait...", "Checking for existing loader files...");
-                    controller.SetCancelable(false);
-                    controller.SetIndeterminate();
-
                     // Remove 'VRChat.exe' from the filepath leaving us with just the game directory.
                     VRChatInstallDir = VRChatExecutablePath.Replace(@"\VRChat.exe", "");
 
-                    // Check if MelonLoader is already installed and if so do a cleanup of previous install.
-                    string MelonLoaderFolder = VRChatInstallDir + @"\MelonLoader";
-                    if (Directory.Exists(MelonLoaderFolder)) { controller.SetMessage("Removing: 'MelonLoader' directory..."); await Task.Delay(500); Directory.Delete(MelonLoaderFolder, true); }
-
-                    // Delete 'version.dll' file if present.
-                    string VersionDLL = VRChatInstallDir + @"\version.dll";
-                    if (File.Exists(VersionDLL)) { controller.SetMessage("Removing: version.dll"); await Task.Delay(500); File.Delete(VersionDLL); }
-
-                    // Install latest custom MelonLoader files from zip.
-                    controller.SetMessage("Preparing to install..."); await Task.Delay(500);
                     Install(VRChatInstallDir);
 
                 }
                 else // Selected file is not 'VRChat.exe'
                 {
                     await this.ShowMessageAsync("Wrong file", "The file you selected is not VRChat.exe\nPlease try again.", MessageDialogStyle.Affirmative);
-                    BrowseForGameDirectory(); // Start the openfiledialog again.
+                    FindInstallDir(); // Start the openfiledialog again.
                 }
             }
             else // User closed the window or clicked cancel.
@@ -206,16 +260,37 @@ namespace Notorious_Installer
                 await this.ShowMessageAsync("Goodbye!", "The installer will now close.", MessageDialogStyle.Affirmative);
                 Environment.Exit(0);
             }
+
         }
 
 
 
         private protected async void Install(string path)
         {
+
             try
             {
                 using (WebClient DL = new WebClient())
                 {
+
+                    // Start installation progress message.
+                    controller = await this.ShowProgressAsync("Installing, please wait...", "Checking for existing loader files...");
+                    controller.SetCancelable(false);
+                    controller.SetIndeterminate();
+
+                    // Check if MelonLoader is already installed and if so do a cleanup of previous install.
+                    string MelonLoaderFolder = path + @"\MelonLoader";
+                    if (Directory.Exists(MelonLoaderFolder)) { controller.SetMessage("Removing: 'MelonLoader' directory..."); await Task.Delay(500); Directory.Delete(MelonLoaderFolder, true); }
+
+                    // Delete 'version.dll' file if present.
+                    string VersionDLL = path + @"\version.dll";
+                    if (File.Exists(VersionDLL)) { controller.SetMessage("Removing: version.dll"); await Task.Delay(500); File.Delete(VersionDLL); }
+
+                    // Install latest custom MelonLoader files from zip.
+                    controller.SetMessage("Preparing to install..."); await Task.Delay(500);
+
+
+
                     string DownloadURL = "https://meap.gg/dl/MelonLoader.zip";
                     string TemporaryExtractFile = path + @"\temp.zip";
 
@@ -228,8 +303,8 @@ namespace Notorious_Installer
                     using (var strm = File.OpenRead(TemporaryExtractFile))
                     using (ZipArchive a = new ZipArchive(strm))
                     {
-                        a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(System.IO.Path.Combine(VRChatInstallDir, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(System.IO.Path.Combine(VRChatInstallDir, o.FullName)));
-                        a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(System.IO.Path.Combine(VRChatInstallDir, e.FullName), true));
+                        a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(System.IO.Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(System.IO.Path.Combine(path, o.FullName)));
+                        a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(System.IO.Path.Combine(path, e.FullName), true));
                     }
 
                     // Cleanup, so we don't leave any unnecessary files behind.
@@ -239,22 +314,59 @@ namespace Notorious_Installer
                     // Closes the progress message window.
                     await controller.CloseAsync();
 
+
+
+                    // Check mod compatibility and give warning if needed.
+                    string ModsFolder = path + @"\Mods";
+                    DirectoryInfo d = new DirectoryInfo(ModsFolder);
+                    FileInfo[] Files = d.GetFiles("*.dll");
+                    if (Files.Length > 1)
+                        await this.ShowMessageAsync("Compatibility warning", "Mulitple mods were found in your mods folder.\nPlease note that some mods may not be compatible with Notorious.\n\nIf you run into any issues, please try removing other mods first before contacting support.", MessageDialogStyle.Affirmative);
+
+
+
                     // Ask the user if they want to start their game now or later.
-                    var msgSettings = new MetroDialogSettings()
+                    var YesNo = new MetroDialogSettings()
                     {
                         AffirmativeButtonText = "Yes",
                         NegativeButtonText = "No",
                     };
-                    MessageDialogResult Result = await this.ShowMessageAsync("All done!", "Notorious has successfully been installed.\nWould you like to start VRChat now?", MessageDialogStyle.AffirmativeAndNegative, msgSettings);
+                    MessageDialogResult Result = await this.ShowMessageAsync("All done!", "Notorious has successfully been installed.\nWould you like to start VRChat now?", MessageDialogStyle.AffirmativeAndNegative, YesNo);
                     if (Result == MessageDialogResult.Affirmative)
                     {
-                        Process.Start(VRChatInstallDir + @"\VRChat.exe");
+                        Process.Start(path + @"\VRChat.exe");
                         Environment.Exit(0);
                     }
                     Environment.Exit(0);
+
                 }
             }
-            catch { await this.ShowMessageAsync("Something went wrong", "Something went wrong while installing, please try again or contact support if the problem persists.\n\ndiscord.gg/NotoriousV2", MessageDialogStyle.Affirmative); Environment.Exit(0); }
+            catch (Exception ex) // An error occurred during the installation.
+            {
+
+                // Closes the progress message window since the installation encountered an error.
+                await controller.CloseAsync();
+
+                var YesNo = new MetroDialogSettings()
+                {
+                    AffirmativeButtonText = "Yes",
+                    NegativeButtonText = "No",
+                };
+
+                await this.ShowMessageAsync("Something went wrong", "Something went wrong while installing.", MessageDialogStyle.Affirmative);
+
+                // Ask the user if they want to create a dump file.
+                MessageDialogResult Result = await this.ShowMessageAsync("Report issue?", "Do you want to dump a log file?\n\nYou can send us this log file in our Discord.\nThis way we can track down and fix your issue.\n\ndiscord.gg/NotoriousV2", MessageDialogStyle.AffirmativeAndNegative, YesNo);
+                if (Result == MessageDialogResult.Affirmative)
+                {
+                    File.WriteAllText("Installer-Error.log", "Error occurred during installation process.\n\n" + ex.ToString());
+                    await this.ShowMessageAsync("Error log created", "'Installer-Error.log' successfully created.\nPlease send this file to a developer in our Discord.\n\ndiscord.gg/NotoriousV2", MessageDialogStyle.Affirmative);
+                    Process.Start(Directory.GetCurrentDirectory());
+                }
+                Environment.Exit(0); // Closes the application.
+
+            }
+
         }
 
     }
