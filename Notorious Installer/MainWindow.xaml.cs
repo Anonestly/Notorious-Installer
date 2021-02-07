@@ -27,8 +27,8 @@ namespace Notorious_Installer
 
         private protected string CurrentVersion = "1.0";
         private protected string VRChatInstallDir;
-        private protected string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData).ToString() + @"\Notorious";
-        private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData).ToString() + @"\Notorious\Auth.txt";
+        private protected string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
+        private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious\Auth.txt";
 
 
 
@@ -48,9 +48,7 @@ namespace Notorious_Installer
             {
                 using (WebClient ReadReq = new WebClient())
                 {
-                    Stream stream = ReadReq.OpenRead("https://meap.gg/dl/Notorious_Installer.txt");
-                    StreamReader reader = new StreamReader(stream);
-                    string RemoteVersion = reader.ReadToEnd();
+                    string RemoteVersion = ReadReq.DownloadString("https://meap.gg/dl/Notorious_Installer.txt");
 
                     // If current version doesn't match remote version then we are out of date.
                     if (CurrentVersion != RemoteVersion)
@@ -120,8 +118,8 @@ namespace Notorious_Installer
             }
             else // Auth file does not exist.
             {
-                // Create Notorious appdata directory if it doesn't exist yet.
-                if (!Directory.Exists(AppdataDir)) { Directory.CreateDirectory(AppdataDir); }
+                // Make sure that the Notorious directory exists inside of appdata directory.
+                Directory.CreateDirectory(AppdataDir);
 
                 // Ask user for license key and write it into Auth file.
                 LicenseKey = await this.ShowInputAsync("Welcome", "Please enter your license key.\n\nDon't own a license key?\nGet one here: meap.gg/buy");
@@ -223,8 +221,7 @@ namespace Notorious_Installer
 
                     // Download installer files into the game directory.
                     controller.SetMessage("Downloading latest loader files..."); await Task.Delay(500);
-                    byte[] bytes = DL.DownloadData(DownloadURL);
-                    File.WriteAllBytes(TemporaryExtractFile, bytes);
+                    DL.DownloadFile(DownloadURL, TemporaryExtractFile);
 
                     // Extract the installer files.
                     controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
