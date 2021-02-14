@@ -8,13 +8,14 @@ using Microsoft.Win32;
 using System.Net;
 using System.IO.Compression;
 using System.Diagnostics;
+using System.Threading;
 
 namespace Notorious_Installer
 {
     public partial class MainWindow : MetroWindow
     {
 
-        private protected static string CurrentVersion = "1.2";
+        private protected static string CurrentVersion = "1.3";
         private protected static string VRChatInstallDir;
         private protected static string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
         private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious\Auth.txt";
@@ -40,7 +41,7 @@ namespace Notorious_Installer
             {
                 using (WebClient ReadReq = new WebClient())
                 {
-                    string RemoteVersion = await ReadReq.DownloadStringTaskAsync(new Uri("https://meap.gg/dl/Notorious_Installer.txt"));
+                    string RemoteVersion = ReadReq.DownloadString(new Uri("https://meap.gg/dl/Notorious_Installer.txt"));
 
                     // If current version doesn't match remote version then we are out of date.
                     if (CurrentVersion != RemoteVersion)
@@ -285,22 +286,37 @@ namespace Notorious_Installer
 
                     // Download installer files into the game directory.
                     controller.SetMessage("Downloading latest loader files..."); await Task.Delay(500);
-                    DL.DownloadFileAsync(new Uri(DownloadURL), TemporaryExtractFile);
 
-
-
-                    // Extract the installer files.
-                    controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
-                    using (var strm = File.OpenRead(TemporaryExtractFile))
-                    using (ZipArchive a = new ZipArchive(strm))
+                    new Thread(() =>
                     {
-                        a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(System.IO.Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(System.IO.Path.Combine(path, o.FullName)));
-                        a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(System.IO.Path.Combine(path, e.FullName), true));
-                    }
+                        DL.DownloadFile(new Uri(DownloadURL), TemporaryExtractFile);
+                    }).Start();
+                    while (DL.IsBusy) { /*Wait*/ }
 
-                    // Cleanup, so we don't leave any unnecessary files behind.
-                    controller.SetMessage("Cleaning up..."); await Task.Delay(500);
-                    File.Delete(TemporaryExtractFile);
+                    controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
+                    while (true)
+                    {
+                        try
+                        {
+                            // Extract the installer files.
+                            using (var strm = File.OpenRead(TemporaryExtractFile))
+                            using (ZipArchive a = new ZipArchive(strm))
+                            {
+                                a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(Path.Combine(path, o.FullName)));
+                                a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(Path.Combine(path, e.FullName), true));
+                            }
+
+                            // Cleanup, so we don't leave any unnecessary files behind.
+                            controller.SetMessage("Cleaning up..."); await Task.Delay(500);
+                            File.Delete(TemporaryExtractFile);
+
+                            break;
+                        }
+                        catch // File isn't available yet.
+                        {
+                            controller.SetMessage("Verifying, this may take a moment..."); await Task.Delay(500);
+                        }
+                    }
 
                     // Closes the progress message window.
                     await controller.CloseAsync();
