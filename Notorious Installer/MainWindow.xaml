@@ -6,9 +6,9 @@
         xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
         xmlns:local="clr-namespace:Notorious_Installer"
         mc:Ignorable="d"
-        Title="Notorious Installer                                                                                     (discord.gg/NotoriousV2)" Height="450" Width="800" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Topmost="True" Icon="icon.ico" ShowIconOnTitleBar="False">
+        Title="Notorious Installer                                                                                       discord.gg/NotoriousV2" Height="450" Width="800" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Icon="icon.ico" ShowIconOnTitleBar="False">
     <Grid>
-        <Image x:Name="image" HorizontalAlignment="Left" Height="411" Margin="185,0,0,0" VerticalAlignment="Top" Width="425" Source="Logo.png"/>
+        <Image x:Name="image" HorizontalAlignment="Left" Height="450" VerticalAlignment="Top" Width="805" Source="banner.png" Margin="0,0,-11,-29"/>
 
     </Grid>
 </mah:MetroWindow>
