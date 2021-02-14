@@ -1,17 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using MahApps.Metro.Controls;
 using MahApps.Metro.Controls.Dialogs;
 using System.IO;
@@ -19,7 +8,6 @@ using Microsoft.Win32;
 using System.Net;
 using System.IO.Compression;
 using System.Diagnostics;
-using System.Threading;
 
 namespace Notorious_Installer
 {
@@ -45,7 +33,6 @@ namespace Notorious_Installer
 
 
 
-        private protected string RemoteVersion;
         private protected async void CheckForUpdates()
         {
 
@@ -53,11 +40,7 @@ namespace Notorious_Installer
             {
                 using (WebClient ReadReq = new WebClient())
                 {
-                    new Thread(() =>
-                    {
-                        RemoteVersion = ReadReq.DownloadString("https://meap.gg/dl/Notorious_Installer.txt");
-                    }).Start();
-                    while (RemoteVersion == null) { /*Wait*/ }
+                    string RemoteVersion = await ReadReq.DownloadStringTaskAsync(new Uri("https://meap.gg/dl/Notorious_Installer.txt"));
 
                     // If current version doesn't match remote version then we are out of date.
                     if (CurrentVersion != RemoteVersion)
