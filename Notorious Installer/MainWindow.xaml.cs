@@ -286,37 +286,21 @@ namespace Notorious_Installer
 
                     // Download installer files into the game directory.
                     controller.SetMessage("Downloading latest loader files..."); await Task.Delay(500);
-
-                    new Thread(() =>
-                    {
-                        DL.DownloadFile(new Uri(DownloadURL), TemporaryExtractFile);
-                    }).Start();
+                    DL.DownloadFile(new Uri(DownloadURL), TemporaryExtractFile);
                     while (DL.IsBusy) { /*Wait*/ }
 
                     controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
-                    while (true)
+                    // Extract the installer files.
+                    using (var strm = File.OpenRead(TemporaryExtractFile))
+                    using (ZipArchive a = new ZipArchive(strm))
                     {
-                        try
-                        {
-                            // Extract the installer files.
-                            using (var strm = File.OpenRead(TemporaryExtractFile))
-                            using (ZipArchive a = new ZipArchive(strm))
-                            {
-                                a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(Path.Combine(path, o.FullName)));
-                                a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(Path.Combine(path, e.FullName), true));
-                            }
-
-                            // Cleanup, so we don't leave any unnecessary files behind.
-                            controller.SetMessage("Cleaning up..."); await Task.Delay(500);
-                            File.Delete(TemporaryExtractFile);
-
-                            break;
-                        }
-                        catch // File isn't available yet.
-                        {
-                            controller.SetMessage("Verifying, this may take a moment..."); await Task.Delay(500);
-                        }
+                        a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(Path.Combine(path, o.FullName)));
+                        a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(Path.Combine(path, e.FullName), true));
                     }
+
+                    // Cleanup, so we don't leave any unnecessary files behind.
+                    controller.SetMessage("Cleaning up..."); await Task.Delay(500);
+                    File.Delete(TemporaryExtractFile);
 
                     // Closes the progress message window.
                     await controller.CloseAsync();
