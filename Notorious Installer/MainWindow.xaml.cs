@@ -8,14 +8,13 @@ using Microsoft.Win32;
 using System.Net;
 using System.IO.Compression;
 using System.Diagnostics;
-using System.Threading;
 
 namespace Notorious_Installer
 {
     public partial class MainWindow : MetroWindow
     {
 
-        private protected static string CurrentVersion = "1.3";
+        private protected static string CurrentVersion = "1.5";
         private protected static string VRChatInstallDir;
         private protected static string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
         private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious\Auth.txt";
@@ -286,8 +285,8 @@ namespace Notorious_Installer
 
                     // Download installer files into the game directory.
                     controller.SetMessage("Downloading latest loader files..."); await Task.Delay(500);
-                    DL.DownloadFile(new Uri(DownloadURL), TemporaryExtractFile);
-                    while (DL.IsBusy) { /*Wait*/ }
+                    byte[] bytes = DL.DownloadData(DownloadURL);
+                    File.WriteAllBytes(TemporaryExtractFile, bytes);
 
                     controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
                     // Extract the installer files.
