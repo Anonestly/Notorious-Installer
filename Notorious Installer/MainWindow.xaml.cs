@@ -8,13 +8,14 @@ using Microsoft.Win32;
 using System.Net;
 using System.IO.Compression;
 using System.Diagnostics;
+using System.Threading;
 
 namespace Notorious_Installer
 {
     public partial class MainWindow : MetroWindow
     {
 
-        private protected static string CurrentVersion = "1.5";
+        private protected static string CurrentVersion = "1.7";
         private protected static string VRChatInstallDir;
         private protected static string AppdataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious";
         private protected static string AuthFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Notorious\Auth.txt";
@@ -35,40 +36,28 @@ namespace Notorious_Installer
 
         private protected async void CheckForUpdates()
         {
-
             try
             {
-                using (WebClient ReadReq = new WebClient())
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+                ServicePointManager.Expect100Continue = false;
+                string RemoteVersion = null;
+                WebClient ReadReq = new WebClient();
+                RemoteVersion = ReadReq.DownloadString("https://meap.gg/dl/Notorious_Installer.txt");
+                ReadReq.Dispose();
+
+                // If current version doesn't match remote version then we are out of date.
+                if (CurrentVersion != RemoteVersion)
                 {
-                    string RemoteVersion = ReadReq.DownloadString(new Uri("https://meap.gg/dl/Notorious_Installer.txt"));
+                    await this.ShowMessageAsync("Update found!", "This installer is out of date.\nWe will now send you to the download of the new installer.");
+                    Process.Start("https://meap.gg/dl/notorious");
+                    Environment.Exit(0);
+                }
+                else // We are up to date.
+                {
 
-                    // If current version doesn't match remote version then we are out of date.
-                    if (CurrentVersion != RemoteVersion)
-                    {
-                        await this.ShowMessageAsync("Update found!", "This installer is out of date.\nWe will now send you to the download of the new installer.");
-                        Process.Start("https://meap.gg/dl/notorious");
-                        Environment.Exit(0);
-                    }
-                    else // We are up to date.
-                    {
+                    // Start the rest of the application.
+                    ValidateLicense();
 
-                        // Check if VRChat is currently running.
-                        Process[] VRChat = Process.GetProcessesByName("VRChat");
-                        if (VRChat.Length != 0)
-                        {
-                            // VRChat is running, the installer cannot continue.
-                            var ExitOnly = new MetroDialogSettings()
-                            {
-                                AffirmativeButtonText = "Exit",
-                            };
-                            await this.ShowMessageAsync("Please close VRChat", "The installer cannot continue while VRChat is running.", MessageDialogStyle.Affirmative, ExitOnly);
-                            Environment.Exit(0);
-                        }
-
-                        // Start the rest of the application.
-                        ValidateLicense();
-
-                    }
                 }
             }
             catch { await this.ShowMessageAsync("Could not connect", "Could not connect to server.\nPlease try again later or contact support if the problem persists.\n\ndiscord.gg/NotoriousV2"); Environment.Exit(0); }
@@ -256,80 +245,38 @@ namespace Notorious_Installer
 
         private protected async void Install(string path)
         {
-
             try
             {
-                using (WebClient DL = new WebClient())
+                // Start installation progress message.
+                controller = await this.ShowProgressAsync("Installing, please wait...", "Checking for existing loader files...");
+                controller.SetCancelable(false);
+                controller.SetIndeterminate();
+
+                await Task.Run(() => HeavyWorkload(path)); // Runs all the heavy installer stuff so the application doesn't freeze.
+
+                // Closes the progress message window.
+                await controller.CloseAsync();
+
+                // Check mod compatibility and give warning if needed.
+                string ModsFolder = path + @"\Mods";
+                DirectoryInfo d = new DirectoryInfo(ModsFolder);
+                FileInfo[] Files = d.GetFiles("*.dll");
+                if (Files.Length > 1)
+                    await this.ShowMessageAsync("Compatibility warning", "Mulitple mods were found in your mods folder.\nPlease note that some mods may not be compatible with Notorious.\n\nIf you run into any issues, please try removing other mods first before contacting support.", MessageDialogStyle.Affirmative);
+
+                // Ask the user if they want to start their game now or later.
+                var YesNo = new MetroDialogSettings()
                 {
-
-                    // Start installation progress message.
-                    controller = await this.ShowProgressAsync("Installing, please wait...", "Checking for existing loader files...");
-                    controller.SetCancelable(false);
-                    controller.SetIndeterminate();
-
-                    // Check if MelonLoader is already installed and if so do a cleanup of previous install.
-                    string MelonLoaderFolder = path + @"\MelonLoader";
-                    if (Directory.Exists(MelonLoaderFolder)) { controller.SetMessage("Removing: 'MelonLoader' directory..."); await Task.Delay(500); Directory.Delete(MelonLoaderFolder, true); }
-
-                    // Delete 'version.dll' file if present.
-                    string VersionDLL = path + @"\version.dll";
-                    if (File.Exists(VersionDLL)) { controller.SetMessage("Removing: version.dll"); await Task.Delay(500); File.Delete(VersionDLL); }
-
-                    // Install latest custom MelonLoader files from zip.
-                    controller.SetMessage("Preparing to install..."); await Task.Delay(500);
-
-
-
-                    string DownloadURL = "https://meap.gg/dl/MelonLoader.zip";
-                    string TemporaryExtractFile = path + @"\temp.zip";
-
-                    // Download installer files into the game directory.
-                    controller.SetMessage("Downloading latest loader files..."); await Task.Delay(500);
-                    byte[] bytes = DL.DownloadData(DownloadURL);
-                    File.WriteAllBytes(TemporaryExtractFile, bytes);
-
-                    controller.SetMessage("Extracting loader files..."); await Task.Delay(500);
-                    // Extract the installer files.
-                    using (var strm = File.OpenRead(TemporaryExtractFile))
-                    using (ZipArchive a = new ZipArchive(strm))
-                    {
-                        a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(Path.Combine(path, o.FullName)));
-                        a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(Path.Combine(path, e.FullName), true));
-                    }
-
-                    // Cleanup, so we don't leave any unnecessary files behind.
-                    controller.SetMessage("Cleaning up..."); await Task.Delay(500);
-                    File.Delete(TemporaryExtractFile);
-
-                    // Closes the progress message window.
-                    await controller.CloseAsync();
-
-
-
-                    // Check mod compatibility and give warning if needed.
-                    string ModsFolder = path + @"\Mods";
-                    DirectoryInfo d = new DirectoryInfo(ModsFolder);
-                    FileInfo[] Files = d.GetFiles("*.dll");
-                    if (Files.Length > 1)
-                        await this.ShowMessageAsync("Compatibility warning", "Mulitple mods were found in your mods folder.\nPlease note that some mods may not be compatible with Notorious.\n\nIf you run into any issues, please try removing other mods first before contacting support.", MessageDialogStyle.Affirmative);
-
-
-
-                    // Ask the user if they want to start their game now or later.
-                    var YesNo = new MetroDialogSettings()
-                    {
-                        AffirmativeButtonText = "Yes",
-                        NegativeButtonText = "No",
-                    };
-                    MessageDialogResult Result = await this.ShowMessageAsync("All done!", "Notorious has successfully been installed.\nWould you like to start VRChat now?", MessageDialogStyle.AffirmativeAndNegative, YesNo);
-                    if (Result == MessageDialogResult.Affirmative)
-                    {
-                        Process.Start(path + @"\VRChat.exe");
-                        Environment.Exit(0);
-                    }
+                    AffirmativeButtonText = "Yes",
+                    NegativeButtonText = "No",
+                };
+                MessageDialogResult Result = await this.ShowMessageAsync("All done!", "Notorious has successfully been installed.\nWould you like to start VRChat now?", MessageDialogStyle.AffirmativeAndNegative, YesNo);
+                if (Result == MessageDialogResult.Affirmative)
+                {
+                    Process.Start(path + @"\VRChat.exe");
                     Environment.Exit(0);
-
                 }
+                Environment.Exit(0);
             }
             catch (Exception ex) // An error occurred during the installation.
             {
@@ -357,6 +304,52 @@ namespace Notorious_Installer
 
             }
 
+        }
+
+        private protected void HeavyWorkload(string path)
+        {
+            // Check if MelonLoader is already installed and if so do a cleanup of previous install.
+            string MelonLoaderFolder = path + @"\MelonLoader";
+            if (Directory.Exists(MelonLoaderFolder)) { controller.SetMessage("Removing: 'MelonLoader' directory..."); Thread.Sleep(500); Directory.Delete(MelonLoaderFolder, true); }
+
+            // Delete 'version.dll' file if present.
+            string VersionDLL = path + @"\version.dll";
+            if (File.Exists(VersionDLL)) { controller.SetMessage("Removing: version.dll"); Thread.Sleep(500); File.Delete(VersionDLL); }
+
+            // Install latest custom MelonLoader files from zip.
+            controller.SetMessage("Preparing to install..."); Thread.Sleep(500);
+            string TemporaryExtractFile = path + @"\temp.zip";
+            string DownloadURL = "https://meap.gg/dl/MelonLoader.zip";
+
+            // Download installer files into the game directory.
+            controller.SetMessage("Downloading latest loader files..."); Thread.Sleep(500);
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+            ServicePointManager.Expect100Continue = false;
+            WebClient DL = new WebClient();
+            DL.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+            DL.DownloadFileAsync(new Uri(DownloadURL), path + @"\temp.zip");
+            while (DL.IsBusy) { Thread.Sleep(100); }
+
+            controller.SetMessage("Extracting loader files..."); Thread.Sleep(500);
+            // Extract the installer files.
+            using (var strm = File.OpenRead(path + @"\temp.zip"))
+            using (ZipArchive a = new ZipArchive(strm))
+            {
+                a.Entries.Where(o => o.Name == string.Empty && !Directory.Exists(Path.Combine(path, o.FullName))).ToList().ForEach(o => Directory.CreateDirectory(Path.Combine(path, o.FullName)));
+                a.Entries.Where(o => o.Name != string.Empty).ToList().ForEach(e => e.ExtractToFile(Path.Combine(path, e.FullName), true));
+            }
+
+            // Cleanup, so we don't leave any unnecessary files behind.
+            controller.SetMessage("Cleaning up..."); Thread.Sleep(500);
+            File.Delete(path + @"\temp.zip");
+        }
+
+        private protected void client_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
+        {
+            double BytesReceived = double.Parse(e.BytesReceived.ToString());
+            double BytesToReceive = double.Parse(e.TotalBytesToReceive.ToString());
+            double Percentage = Math.Round(BytesReceived / BytesToReceive * 100, 0);
+            controller.SetMessage("Downloading loader files: " + Percentage + "%");
         }
 
     }
